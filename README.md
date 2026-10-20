@@ -24,6 +24,30 @@ Settings live in `src/main/resources/application.properties`:
 | `app.exam.duration-seconds` | `1800` | Exam length; lower it to test the warning and auto-submit |
 | `app.exam.grace-seconds` | `30` | Saves are still accepted this long after the timer ends |
 
+On a server, set the `PORT` and `CORS_ALLOWED_ORIGINS` environment variables instead of editing the file.
+
+## Deploy to OpenShift
+
+`openshift/app.yaml` holds an ImageStream, a BuildConfig that builds the `Dockerfile` from this repo's `main` branch, a Deployment, a Service and an HTTPS Route.
+
+```bash
+oc login --token=<token> --server=<api-url>
+oc project <your-project>
+oc apply -f openshift/app.yaml
+oc start-build learn-angular-rxjs-be --follow
+oc get route learn-angular-rxjs-be      # public URL of the API
+```
+
+Then put the Angular app's URL in `CORS_ALLOWED_ORIGINS`:
+
+```bash
+oc set env deployment/learn-angular-rxjs-be CORS_ALLOWED_ORIGINS=https://<frontend-host>
+```
+
+Keep one replica: exams, answers and the leaderboard live in memory, so they reset whenever the pod restarts.
+
+The same image runs anywhere with Docker: `docker build -t learn-angular-rxjs-be . && docker run -p 8080:8080 learn-angular-rxjs-be`.
+
 ## Mock data
 
 * One exam, `EXAM-101` "Angular & RxJS Fundamentals": 20 multiple-choice questions, 5 marks each, 30 minutes, warning at 300 seconds, pass mark 40%.
