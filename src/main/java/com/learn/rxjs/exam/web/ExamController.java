@@ -3,6 +3,7 @@ package com.learn.rxjs.exam.web;
 import com.learn.rxjs.exam.model.ExamSettings;
 import com.learn.rxjs.exam.model.Leaderboard;
 import com.learn.rxjs.exam.model.Question;
+import com.learn.rxjs.exam.model.RxjsScenario;
 import com.learn.rxjs.exam.service.ExamSessionService;
 import com.learn.rxjs.exam.service.LeaderboardService;
 import com.learn.rxjs.exam.service.MockDataService;
@@ -39,13 +40,28 @@ public class ExamController {
         return data.allExams();
     }
 
-    /** forkJoin source: exam settings (duration, warning time, debounce, retry policy, tab-switch limit). */
+    /**
+     * Scenario 5: load the exam start screen.
+     *
+     * forkJoin source: exam settings. Also feeds scenario 1 (durationSeconds), 2 (autoSaveDebounceMs),
+     * 4 (maxTabSwitches), 7 (saveRetryCount, saveRetryDelayMs), 8 (warningAtSeconds) and 9 (leaderboardPollIntervalMs).
+     * <pre>forkJoin({ questions, student, settings })</pre>
+     *
+     * @see RxjsScenario#START_SCREEN
+     */
     @GetMapping("/{examId}/settings")
     public ExamSettings settings(@PathVariable String examId) {
         return data.settings(examId);
     }
 
-    /** forkJoin source: the questions, without correct answers. */
+    /**
+     * Scenario 5: load the exam start screen.
+     *
+     * forkJoin source: the questions, without correct answers.
+     * <pre>forkJoin({ questions, student, settings })</pre>
+     *
+     * @see RxjsScenario#START_SCREEN
+     */
     @GetMapping("/{examId}/questions")
     public List<Question> questions(@PathVariable String examId) {
         return data.questions(examId);
@@ -56,14 +72,28 @@ public class ExamController {
         return data.question(examId, questionId);
     }
 
-    /** All three forkJoin sources in one response, for comparing against the client-side forkJoin. */
+    /**
+     * Scenario 5: load the exam start screen.
+     *
+     * All three forkJoin sources in one response, for comparing against the client-side forkJoin.
+     *
+     * @see RxjsScenario#START_SCREEN
+     */
     @GetMapping("/{examId}/start-screen")
     public StartScreen startScreen(@PathVariable String examId,
                                    @RequestParam(defaultValue = MockDataService.DEFAULT_STUDENT_ID) String studentId) {
         return new StartScreen(data.questions(examId), data.student(studentId), data.settings(examId));
     }
 
-    /** Starts the attempt (or resumes an unfinished one) and returns the server clock for the countdown. */
+    /**
+     * Scenario 1: countdown timer.
+     *
+     * Starts the attempt (or resumes an unfinished one) and returns the server clock.
+     * Seed the countdown with remainingSeconds, and call submitExam() when it completes:
+     * <pre>timer(0, 1000).pipe(map(s =&gt; duration - s), takeWhile(t =&gt; t &gt;= 0))</pre>
+     *
+     * @see RxjsScenario#COUNTDOWN_TIMER
+     */
     @PostMapping("/{examId}/sessions")
     @ResponseStatus(HttpStatus.CREATED)
     public SessionStarted start(@PathVariable String examId, @RequestBody(required = false) StartSessionRequest request) {
@@ -72,7 +102,15 @@ public class ExamController {
         return sessions.start(examId, studentId);
     }
 
-    /** Teacher view, for polling with interval(10000) + switchMap. See /ws/leaderboard for the push version. */
+    /**
+     * Scenario 9: live results or leaderboard (teacher view).
+     *
+     * See who has submitted as it happens by polling this endpoint:
+     * <pre>interval(10000).pipe(switchMap(() =&gt; http.get(url)))</pre>
+     * or use the WebSocket at /ws/leaderboard instead.
+     *
+     * @see RxjsScenario#LIVE_LEADERBOARD
+     */
     @GetMapping("/{examId}/leaderboard")
     public Leaderboard leaderboard(@PathVariable String examId) {
         return leaderboard.leaderboard(examId);

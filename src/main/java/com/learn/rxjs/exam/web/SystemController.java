@@ -1,5 +1,6 @@
 package com.learn.rxjs.exam.web;
 
+import com.learn.rxjs.exam.model.RxjsScenario;
 import com.learn.rxjs.exam.service.ChaosService;
 import com.learn.rxjs.exam.service.ExamSessionService;
 import com.learn.rxjs.exam.service.LeaderboardService;
@@ -30,7 +31,14 @@ public class SystemController {
         this.leaderboard = leaderboard;
     }
 
-    /** Lightweight call to confirm the server is reachable again after window 'online'. */
+    /**
+     * Scenario 7: network drop handling.
+     *
+     * Lightweight call to confirm the server is reachable again after window 'online'.
+     * <pre>fromEvent(window, 'offline')</pre>
+     *
+     * @see RxjsScenario#NETWORK_DROP_HANDLING
+     */
     @GetMapping("/health/ping")
     public Ping ping() {
         return new Ping("UP", Instant.now());
@@ -41,6 +49,14 @@ public class SystemController {
         return chaos.current();
     }
 
+    /**
+     * Scenario 7: network drop handling.
+     *
+     * Make the next saves or requests fail with 503, or slow every call down, to practise:
+     * <pre>retry({ count: 3, delay: 2000 })</pre>
+     *
+     * @see RxjsScenario#NETWORK_DROP_HANDLING
+     */
     @PutMapping("/chaos")
     public ChaosConfig updateChaos(@RequestBody ChaosConfig config) {
         return chaos.update(config);
