@@ -24,6 +24,12 @@ Settings live in `src/main/resources/application.properties`:
 | `app.exam.duration-seconds` | `1800` | Exam length; lower it to test the warning and auto-submit |
 | `app.exam.grace-seconds` | `30` | Saves are still accepted this long after the timer ends |
 
+On a server, set the `PORT` and `CORS_ALLOWED_ORIGINS` environment variables instead of editing the file.
+
+## Deploy to OpenShift
+
+Log in with `oc login`, then run `./scripts/deploy-backend.sh`. See [deploy/README.md](deploy/README.md).
+
 ## Mock data
 
 * One exam, `EXAM-101` "Angular & RxJS Fundamentals": 20 multiple-choice questions, 5 marks each, 30 minutes, warning at 300 seconds, pass mark 40%.

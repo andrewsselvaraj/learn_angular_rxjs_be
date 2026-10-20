@@ -1,0 +1,37 @@
+# Builds the backend with the Red Hat OpenJDK 21 S2I builder.
+# Start a build with: oc start-build learn-angular-rxjs-be --follow
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: learn-angular-rxjs-be
+spec:
+  runPolicy: Serial
+  source:
+    type: Git
+    git:
+      uri: https://github.com/andrewsselvaraj/learn_angular_rxjs_be.git
+      ref: main
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: DockerImage
+        name: registry.access.redhat.com/ubi9/openjdk-21:1.21
+      env:
+        - name: MAVEN_ARGS
+          value: "-B package -DskipTests"
+        # UBI 9 OpenJDK builders read MAVEN_S2I_ARTIFACT_DIRS; ARTIFACT_DIR is only for older images.
+        - name: MAVEN_S2I_ARTIFACT_DIRS
+          value: target
+        - name: ARTIFACT_DIR
+          value: target
+  output:
+    to:
+      kind: ImageStreamTag
+      name: learn-angular-rxjs-be:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi

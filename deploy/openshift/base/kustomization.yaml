@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Mock exam backend for the RxJS practice app. A single service with a public Route.
+resources:
+  - imagestream.yaml
+  - buildconfig.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - route.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: learn-angular-rxjs-be
+      app.kubernetes.io/part-of: learn-angular-rxjs

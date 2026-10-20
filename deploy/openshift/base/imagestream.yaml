@@ -1,0 +1,7 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: learn-angular-rxjs-be
+spec:
+  lookupPolicy:
+    local: true
