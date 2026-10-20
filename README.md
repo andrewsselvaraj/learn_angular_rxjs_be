@@ -37,6 +37,29 @@ Settings live in `src/main/resources/application.properties`:
 3. Answer questions. Auto-save with `POST /api/sessions/{sessionId}/answers`.
 4. `POST /api/sessions/{sessionId}/submit` from the Submit button or when the timer reaches zero.
 
+## The nine RxJS scenarios
+
+An online exam app is a great fit for RxJS. These are the places the Angular app uses it, and each one has its own endpoints below:
+
+1. **Countdown timer:** show the time left and submit automatically when it reaches zero. `timer(0, 1000).pipe(map(s => duration - s), takeWhile(t => t >= 0))`, and when it completes, call `submitExam()`.
+2. **Auto-save answers:** save to the server a moment after the student picks an answer, so nothing is lost if the browser crashes. `answers$.pipe(debounceTime(2000), switchMap(a => http.post('/save', a)))`
+3. **Exam state shared across components:** the question panel, the "answered 7/20" bar and the question navigator all read the same state. Use a `BehaviorSubject<ExamState>` in an `ExamService`.
+4. **Tab-switch or cheating detection:** count how many times the student leaves the page. `fromEvent(document, 'visibilitychange').pipe(filter(() => document.hidden))`
+5. **Load the exam start screen:** fetch the questions, the student and the exam settings together. `forkJoin({ questions, student, settings })`
+6. **Prevent double submit:** a nervous double click on Submit should send only one request. `submitClicks$.pipe(exhaustMap(() => http.post('/submit', answers)))`
+7. **Network drop handling:** retry saves, and show "offline" when the connection is lost. `retry({ count: 3, delay: 2000 })`, plus `fromEvent(window, 'offline')`
+8. **"5 minutes left" warning:** `timeLeft$.pipe(filter(t => t === 300))` shows a popup once.
+9. **Live results or leaderboard (teacher view):** see who has submitted as it happens, using `interval(10000)` with `switchMap(http.get)`, or a WebSocket.
+
+If you want to start small, the timer, auto-save and double-submit protection give the biggest benefit for the least code.
+
+The same list lives in the code as the `RxjsScenario` enum (`model/RxjsScenario.java`), each controller method's Javadoc starts with the scenario it serves, and the API serves the catalogue:
+
+| Method | Path | Returns |
+| --- | --- | --- |
+| GET | `/api/scenarios` | All nine scenarios: `number`, `key`, `title`, `description`, `rxjs` snippet and `endpoints` |
+| GET | `/api/scenarios/{number}` | One scenario, 1 to 9 |
+
 ## Endpoints by RxJS scenario
 
 All REST paths are under `http://localhost:8080`. Times are ISO-8601 UTC strings. Errors share one shape:
@@ -45,7 +68,80 @@ All REST paths are under `http://localhost:8080`. Times are ISO-8601 UTC strings
 { "timestamp": "...", "status": 409, "error": "Conflict", "code": "ALREADY_SUBMITTED", "message": "Exam already submitted", "path": "/api/sessions/.../answers" }
 ```
 
-### 1. Load the exam start screen (`forkJoin`)
+### Scenario 1. Countdown timer (`timer(0, 1000)` + `takeWhile`)
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| POST | `/api/exams/{examId}/sessions` | `{ "studentId": "S1001" }` (optional) | `SessionStarted` (201) |
+| GET | `/api/sessions/{sessionId}` | | `SessionStarted` |
+| GET | `/api/sessions/{sessionId}/time` | | `TimeRemaining` |
+
+Starting again while an attempt is unfinished returns the same session with `resumed: true`, which is how a crashed browser picks up where it left off.
+
+```json
+{ "sessionId": "dd93…", "serverTime": "...", "startedAt": "...", "endsAt": "...",
+  "durationSeconds": 1800, "remainingSeconds": 1800, "resumed": false }
+```
+
+Seed the timer with `remainingSeconds`, and call `/time` to resync after a refresh:
+
+```ts
+timer(0, 1000).pipe(
+  map(s => remainingSeconds - s),
+  takeWhile(t => t >= 0),
+).subscribe({ next: t => timeLeft$.next(t), complete: () => submitExam('TIMER') });
+```
+
+### Scenario 2. Auto-save answers (`debounceTime` + `switchMap`)
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| POST | `/api/sessions/{sessionId}/answers` | `{ "answers": { "Q1": "B" }, "currentQuestionIndex": 0 }` | `SaveAnswersResponse` |
+| GET | `/api/sessions/{sessionId}/answers` | | Last saved answers, to restore after a crash |
+
+`answers` maps a question id to an option id (`A` to `D`). Answers are merged, and `null` clears one. Sending the full map every time is fine. Unknown questions or options return 400, and saves after submit or after time is up return 409.
+
+```ts
+answers$.pipe(
+  debounceTime(2000),
+  switchMap(answers => http.post(`${api}/sessions/${id}/answers`, { answers })),
+)
+```
+
+### Scenario 3. Exam state shared across components (`BehaviorSubject<ExamState>`)
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| GET | `/api/sessions/{sessionId}/state` | | `ExamState` |
+| PATCH | `/api/sessions/{sessionId}/state` | `{ "currentQuestionIndex": 5, "flaggedQuestionIds": ["Q4"] }` | `ExamState` |
+
+```json
+{ "sessionId": "…", "status": "IN_PROGRESS", "currentQuestionIndex": 5, "totalQuestions": 20, "answeredCount": 7,
+  "answers": { "Q1": "B", … }, "flaggedQuestionIds": ["Q4"], "remainingSeconds": 1712,
+  "tabSwitchCount": 0, "lastSavedAt": "..." }
+```
+
+Use the GET as the initial value of the `BehaviorSubject` in `ExamService`; the question panel, the "answered 7/20" bar and the navigator all read from it.
+
+### Scenario 4. Tab-switch / cheating detection (`fromEvent(document, 'visibilitychange')`)
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| POST | `/api/sessions/{sessionId}/events/tab-switch` | `{ "hiddenAt": "2026-10-20T10:15:30Z" }` (optional) | `TabSwitchSummary` |
+| GET | `/api/sessions/{sessionId}/events/tab-switch` | | `TabSwitchSummary` |
+
+```json
+{ "count": 2, "maxAllowed": 3, "remainingAllowed": 1, "limitExceeded": false, "events": [ { "sequence": 1, "hiddenAt": "...", "receivedAt": "..." } ] }
+```
+
+```ts
+fromEvent(document, 'visibilitychange').pipe(
+  filter(() => document.hidden),
+  concatMap(() => http.post(`${api}/sessions/${id}/events/tab-switch`, { hiddenAt: new Date().toISOString() })),
+)
+```
+
+### Scenario 5. Load the exam start screen (`forkJoin`)
 
 | Method | Path | Returns |
 | --- | --- | --- |
@@ -73,80 +169,7 @@ forkJoin({
   "maxTabSwitches": 3, "leaderboardPollIntervalMs": 10000, "allowReview": true, ... }
 ```
 
-### 2. Countdown timer (`timer(0, 1000)` + `takeWhile`)
-
-| Method | Path | Body | Returns |
-| --- | --- | --- | --- |
-| POST | `/api/exams/{examId}/sessions` | `{ "studentId": "S1001" }` (optional) | `SessionStarted` (201) |
-| GET | `/api/sessions/{sessionId}` | | `SessionStarted` |
-| GET | `/api/sessions/{sessionId}/time` | | `TimeRemaining` |
-
-Starting again while an attempt is unfinished returns the same session with `resumed: true`, which is how a crashed browser picks up where it left off.
-
-```json
-{ "sessionId": "dd93…", "serverTime": "...", "startedAt": "...", "endsAt": "...",
-  "durationSeconds": 1800, "remainingSeconds": 1800, "resumed": false }
-```
-
-Seed the timer with `remainingSeconds`, and call `/time` to resync after a refresh:
-
-```ts
-timer(0, 1000).pipe(
-  map(s => remainingSeconds - s),
-  takeWhile(t => t >= 0),
-).subscribe({ next: t => timeLeft$.next(t), complete: () => submitExam('TIMER') });
-```
-
-### 3. Auto-save answers (`debounceTime` + `switchMap`)
-
-| Method | Path | Body | Returns |
-| --- | --- | --- | --- |
-| POST | `/api/sessions/{sessionId}/answers` | `{ "answers": { "Q1": "B" }, "currentQuestionIndex": 0 }` | `SaveAnswersResponse` |
-| GET | `/api/sessions/{sessionId}/answers` | | Last saved answers, to restore after a crash |
-
-`answers` maps a question id to an option id (`A` to `D`). Answers are merged, and `null` clears one. Sending the full map every time is fine. Unknown questions or options return 400, and saves after submit or after time is up return 409.
-
-```ts
-answers$.pipe(
-  debounceTime(2000),
-  switchMap(answers => http.post(`${api}/sessions/${id}/answers`, { answers })),
-)
-```
-
-### 4. Exam state shared across components (`BehaviorSubject<ExamState>`)
-
-| Method | Path | Body | Returns |
-| --- | --- | --- | --- |
-| GET | `/api/sessions/{sessionId}/state` | | `ExamState` |
-| PATCH | `/api/sessions/{sessionId}/state` | `{ "currentQuestionIndex": 5, "flaggedQuestionIds": ["Q4"] }` | `ExamState` |
-
-```json
-{ "sessionId": "…", "status": "IN_PROGRESS", "currentQuestionIndex": 5, "totalQuestions": 20, "answeredCount": 7,
-  "answers": { "Q1": "B", … }, "flaggedQuestionIds": ["Q4"], "remainingSeconds": 1712,
-  "tabSwitchCount": 0, "lastSavedAt": "..." }
-```
-
-Use the GET as the initial value of the `BehaviorSubject` in `ExamService`; the question panel, the "answered 7/20" bar and the navigator all read from it.
-
-### 5. Tab-switch / cheating detection (`fromEvent(document, 'visibilitychange')`)
-
-| Method | Path | Body | Returns |
-| --- | --- | --- | --- |
-| POST | `/api/sessions/{sessionId}/events/tab-switch` | `{ "hiddenAt": "2026-10-20T10:15:30Z" }` (optional) | `TabSwitchSummary` |
-| GET | `/api/sessions/{sessionId}/events/tab-switch` | | `TabSwitchSummary` |
-
-```json
-{ "count": 2, "maxAllowed": 3, "remainingAllowed": 1, "limitExceeded": false, "events": [ { "sequence": 1, "hiddenAt": "...", "receivedAt": "..." } ] }
-```
-
-```ts
-fromEvent(document, 'visibilitychange').pipe(
-  filter(() => document.hidden),
-  concatMap(() => http.post(`${api}/sessions/${id}/events/tab-switch`, { hiddenAt: new Date().toISOString() })),
-)
-```
-
-### 6. Prevent double submit (`exhaustMap`)
+### Scenario 6. Prevent double submit (`exhaustMap`)
 
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
@@ -165,7 +188,7 @@ Submit is idempotent and takes about 1.5 seconds. `submitRequestCount` counts ev
 submitClicks$.pipe(exhaustMap(() => http.post(`${api}/sessions/${id}/submit`, { answers, reason: 'MANUAL' })))
 ```
 
-### 7. Network drop handling (`retry` + `fromEvent(window, 'offline')`)
+### Scenario 7. Network drop handling (`retry` + `fromEvent(window, 'offline')`)
 
 | Method | Path | Body | Purpose |
 | --- | --- | --- | --- |
@@ -180,7 +203,7 @@ submitClicks$.pipe(exhaustMap(() => http.post(`${api}/sessions/${id}/submit`, { 
 
 For a real offline test, stop the server or use DevTools "Offline"; `fromEvent(window, 'offline')` only fires when the browser loses its connection.
 
-### 8. "5 minutes left" warning (`filter(t => t === 300)`)
+### Scenario 8. "5 minutes left" warning (`filter(t => t === 300)`)
 
 | Method | Path | Returns |
 | --- | --- | --- |
@@ -190,7 +213,7 @@ For a real offline test, stop the server or use DevTools "Offline"; `fromEvent(w
 
 To reach the warning and the auto-submit quickly, run with a short exam: `./mvnw spring-boot:run -Dspring-boot.run.arguments=--app.exam.duration-seconds=360`.
 
-### 9. Live results / leaderboard (teacher view)
+### Scenario 9. Live results / leaderboard (teacher view)
 
 **Polling** with `interval(10000)` + `switchMap`:
 
@@ -232,7 +255,7 @@ You get a `SNAPSHOT` on connect, then a message whenever anyone starts or submit
 ```
 src/main/java/com/learn/rxjs/exam
 ├── config/   CORS, WebSocket registration, latency/failure interceptor
-├── model/    Question, Student, ExamSettings, ExamSession, Leaderboard…
+├── model/    RxjsScenario, Question, Student, ExamSettings, ExamSession, Leaderboard…
 ├── service/  MockDataService (seed data), ExamSessionService, LeaderboardService, ChaosService
 ├── web/      REST controllers and request/response records (web/dto)
 └── ws/       LeaderboardWebSocketHandler

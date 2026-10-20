@@ -22,9 +22,15 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 /**
+ * Scenario 9: live results or leaderboard (teacher view), the WebSocket option.
+ *
+ * <pre>webSocket&lt;LeaderboardMessage&gt;('ws://localhost:8080/ws/leaderboard')</pre>
+ *
  * Pushes leaderboard changes. On connect the client gets a SNAPSHOT; afterwards a STARTED or SUBMITTED
  * message each time a student starts or submits. Every message carries the full leaderboard, so the
  * client can simply replace its state. Sending the text "refresh" asks for a new SNAPSHOT.
+ *
+ * @see com.learn.rxjs.exam.model.RxjsScenario#LIVE_LEADERBOARD
  */
 @Component
 public class LeaderboardWebSocketHandler extends TextWebSocketHandler {

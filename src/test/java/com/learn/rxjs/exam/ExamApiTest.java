@@ -91,6 +91,16 @@ class ExamApiTest {
     }
 
     @Test
+    void scenarioCatalogueListsAllNine() throws Exception {
+        mvc.perform(get("/api/scenarios"))
+                .andExpect(jsonPath("$", hasSize(9)))
+                .andExpect(jsonPath("$[0].title").value("Countdown timer"))
+                .andExpect(jsonPath("$[5].rxjs").value("submitClicks$.pipe(exhaustMap(() => http.post('/submit', answers)))"));
+        mvc.perform(get("/api/scenarios/8")).andExpect(jsonPath("$.key").value("FIVE_MINUTE_WARNING"));
+        mvc.perform(get("/api/scenarios/10")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void corsAllowsAngularDevServer() throws Exception {
         mvc.perform(options("/api/exams/EXAM-101/questions")
                         .header("Origin", "http://localhost:4200")
