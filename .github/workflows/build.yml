@@ -22,4 +22,4 @@ jobs:
           name: learn-angular-rxjs-be-jar
           path: target/*.jar
       - name: Build Docker image
-        run: docker build -t learn-angular-rxjs-be .
+        run: docker build -f deploy/docker/Dockerfile -t learn-angular-rxjs-be .

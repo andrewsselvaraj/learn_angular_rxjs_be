@@ -28,25 +28,7 @@ On a server, set the `PORT` and `CORS_ALLOWED_ORIGINS` environment variables ins
 
 ## Deploy to OpenShift
 
-`openshift/app.yaml` holds an ImageStream, a BuildConfig that builds the `Dockerfile` from this repo's `main` branch, a Deployment, a Service and an HTTPS Route.
-
-```bash
-oc login --token=<token> --server=<api-url>
-oc project <your-project>
-oc apply -f openshift/app.yaml
-oc start-build learn-angular-rxjs-be --follow
-oc get route learn-angular-rxjs-be      # public URL of the API
-```
-
-Then put the Angular app's URL in `CORS_ALLOWED_ORIGINS`:
-
-```bash
-oc set env deployment/learn-angular-rxjs-be CORS_ALLOWED_ORIGINS=https://<frontend-host>
-```
-
-Keep one replica: exams, answers and the leaderboard live in memory, so they reset whenever the pod restarts.
-
-The same image runs anywhere with Docker: `docker build -t learn-angular-rxjs-be . && docker run -p 8080:8080 learn-angular-rxjs-be`.
+Log in with `oc login`, then run `./scripts/deploy-backend.sh`. See [deploy/README.md](deploy/README.md).
 
 ## Mock data
 

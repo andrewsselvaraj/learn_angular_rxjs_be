@@ -1,0 +1,18 @@
+# Public HTTPS endpoint for the REST API and the /ws/leaderboard WebSocket.
+# Leave spec.host empty to get learn-angular-rxjs-be-<namespace>.apps.<cluster-domain>.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: learn-angular-rxjs-be
+  annotations:
+    # Keep the leaderboard WebSocket open longer than the router's default 30s idle timeout.
+    haproxy.router.openshift.io/timeout: 1h
+spec:
+  to:
+    kind: Service
+    name: learn-angular-rxjs-be
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
